@@ -72,14 +72,26 @@ leetcode-coach init            # choose a roadmap (once)
 leetcode-coach plan 45         # "I have 45 minutes" -> today's plan
 leetcode-coach done "..."      # recap your session in plain English
 leetcode-coach progress        # a quick look at where you are
+leetcode-coach undo            # walk back the last recorded update
 ```
 
 `plan` accepts natural phrasings too: `plan "1 hour"`, `plan 90m`.
+
+If `done` misreads your recap (wrong problem matched, wrong outcome), `undo`
+reverts your history to how it was right before that update. Only the most
+recent save can be undone.
 
 If you don't want to install, run it as a module: `python -m coach plan 45`.
 
 Your history lives at `~/.leetcode-coach/state.json` (override with
 `LEETCODE_COACH_HOME` or `--state`).
+
+A few environment variables tweak how the coach runs:
+
+- `LEETCODE_COACH_MODEL` — use a different Claude model than the default.
+- `LEETCODE_COACH_ROADMAPS` — a directory of extra roadmap JSON files (same
+  shape as `coach/data/*.json`); an id here overrides a bundled roadmap with
+  the same name.
 
 ## Roadmap (beyond the MVP)
 
