@@ -12,7 +12,11 @@ env/
 # Local coach state (personal learning history — never commit)
 .leetcode-coach/
 state.json
+state.backup.json
 last_plan.json
+
+# test artifacts
+.pytest_cache/
 
 # OS / editor
 .DS_Store

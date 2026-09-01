@@ -10,15 +10,21 @@ coach's judgement rather than in hardcoded rules:
 
 Both use the Anthropic Messages API with structured outputs (``output_config``)
 so the returned JSON validates against a fixed schema. The model defaults to
-``claude-opus-4-8``. Set ``ANTHROPIC_API_KEY`` (or run ``ant auth login``).
+``claude-opus-4-8`` and can be overridden with ``LEETCODE_COACH_MODEL``. Set
+``ANTHROPIC_API_KEY`` (or run ``ant auth login``).
 """
 
 from __future__ import annotations
 
 import json
+import os
+import time
 from typing import Any
 
-MODEL = "claude-opus-4-8"
+MODEL = os.environ.get("LEETCODE_COACH_MODEL", "claude-opus-4-8")
+
+_MAX_ATTEMPTS = 4
+_BACKOFF_SECONDS = 1.5
 
 
 class LLMError(RuntimeError):
@@ -36,6 +42,9 @@ def _client():
     try:
         return anthropic.Anthropic()
     except Exception as exc:  # pragma: no cover - environment dependent
+        # Construction rarely fails on its own — the SDK resolves credentials
+        # lazily and doesn't validate them until the first request. Malformed
+        # explicit config (a bad profile file, etc.) can still raise here.
         raise LLMError(
             "Could not initialise the Anthropic client. Set ANTHROPIC_API_KEY "
             "or run `ant auth login`.\n"
@@ -50,24 +59,65 @@ def _first_text(response: Any) -> str:
     raise LLMError("Model returned no text content.")
 
 
+def _is_auth_error(exc: Exception) -> bool:
+    import anthropic
+
+    if isinstance(exc, anthropic.AuthenticationError):
+        return True
+    # Missing credentials surface as a plain TypeError from deep inside the
+    # SDK's header-building code rather than an AuthenticationError, since no
+    # request is ever sent — match on the message instead.
+    return "authenticat" in str(exc).lower() or "api_key" in str(exc).lower()
+
+
+def _is_transient(exc: Exception) -> bool:
+    import anthropic
+
+    return isinstance(
+        exc,
+        (anthropic.RateLimitError, anthropic.APIConnectionError, anthropic.InternalServerError),
+    )
+
+
+def _translate_error(exc: Exception) -> LLMError:
+    if _is_auth_error(exc):
+        return LLMError(
+            "Could not authenticate with the Anthropic API. Set ANTHROPIC_API_KEY "
+            "or run `ant auth login`.\n"
+            f"Original error: {exc}"
+        )
+    if type(exc).__name__ == "NotFoundError":
+        return LLMError(
+            f"Model {MODEL!r} was not found for this account. "
+            "Check your API access, or set LEETCODE_COACH_MODEL to try another one."
+        )
+    if _is_transient(exc):
+        return LLMError(f"Model request failed after retrying: {exc}")
+    return LLMError(f"Model request failed: {exc}")
+
+
 def _call_structured(system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
     client = _client()
-    try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=8000,
-            thinking={"type": "adaptive"},
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            output_config={"format": {"type": "json_schema", "schema": schema}},
-        )
-    except Exception as exc:  # pragma: no cover - environment dependent
-        if type(exc).__name__ == "NotFoundError":
-            raise LLMError(
-                f"Model {MODEL!r} was not found for this account. "
-                "Check your API access."
-            ) from exc
-        raise LLMError(f"Model request failed: {exc}") from exc
+    response = None
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=8000,
+                thinking={"type": "adaptive"},
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                output_config={"format": {"type": "json_schema", "schema": schema}},
+            )
+            break
+        except Exception as exc:  # pragma: no cover - environment dependent
+            last_exc = exc
+            if not _is_transient(exc) or attempt == _MAX_ATTEMPTS - 1:
+                raise _translate_error(exc) from exc
+            time.sleep(_BACKOFF_SECONDS * (2**attempt))
+    if response is None:  # pragma: no cover - defensive, loop always breaks or raises
+        raise _translate_error(last_exc) from last_exc
 
     if response.stop_reason == "refusal":
         raise LLMError("The model declined to respond to this request.")

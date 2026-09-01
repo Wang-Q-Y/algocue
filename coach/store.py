@@ -93,6 +93,10 @@ class Store:
     def __init__(self, path: Path | None = None):
         self.path = path or default_state_path()
 
+    @property
+    def backup_path(self) -> Path:
+        return self.path.with_suffix(".backup.json")
+
     def exists(self) -> bool:
         return self.path.exists()
 
@@ -111,6 +115,10 @@ class Store:
 
     def save(self, state: State) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.exists():
+            # Keep one prior version around so a bad `done` (a misread recap,
+            # a wrong outcome) can be walked back with `leetcode-coach undo`.
+            self.backup_path.write_text(self.path.read_text())
         payload: dict[str, Any] = {
             "roadmap_id": state.roadmap_id,
             "created": state.created or date.today().isoformat(),
@@ -120,6 +128,14 @@ class Store:
         tmp = self.path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
         tmp.replace(self.path)
+
+    def restore_backup(self) -> bool:
+        """Roll back to the state before the most recent save, if one exists."""
+        if not self.backup_path.exists():
+            return False
+        self.path.write_text(self.backup_path.read_text())
+        self.backup_path.unlink()
+        return True
 
 
 def _record_from_dict(raw: dict[str, Any]) -> ProblemRecord:

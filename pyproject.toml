@@ -7,10 +7,13 @@ name = "leetcode-coach"
 version = "0.1.0"
 description = "An AI coach that decides exactly what LeetCode problem you should practice each day."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "anthropic>=0.40",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.scripts]
 leetcode-coach = "coach.cli:main"

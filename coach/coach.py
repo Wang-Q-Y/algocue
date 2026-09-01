@@ -193,6 +193,10 @@ class Coach:
             "coach_note": raw.get("coach_note", ""),
         }
 
+    def undo_last(self) -> bool:
+        """Revert the most recent save (typically a `done` that got misread)."""
+        return self.store.restore_backup()
+
     # ---- progress summary (lightweight dashboard) ----------------------- #
 
     def progress(self) -> dict[str, Any]:

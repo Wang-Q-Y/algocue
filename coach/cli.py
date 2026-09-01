@@ -7,6 +7,7 @@ the CLI is intentionally tiny:
     leetcode-coach plan          "I have 45 minutes" -> today's plan
     leetcode-coach done          tell the coach how it went (plain English)
     leetcode-coach progress      a quick look at where you are
+    leetcode-coach undo          walk back the last `done` if it got misread
 
 `plan` then `done` is the whole daily loop.
 """
@@ -265,6 +266,15 @@ def _render_feedback(result: dict) -> None:
         print(dim("Nothing to record from that."))
 
 
+def cmd_undo(args: argparse.Namespace) -> int:
+    coach = Coach(store=Store(args.state))
+    if coach.undo_last():
+        print(green("Reverted your last recorded update."))
+        return 0
+    print(yellow("Nothing to undo."))
+    return 1
+
+
 def cmd_progress(args: argparse.Namespace) -> int:
     coach = Coach(store=Store(args.state))
     if not coach.is_initialized():
@@ -322,6 +332,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_prog = sub.add_parser("progress", help="See where you are on the roadmap.")
     p_prog.set_defaults(func=cmd_progress)
+
+    p_undo = sub.add_parser("undo", help="Revert the last recorded update.")
+    p_undo.set_defaults(func=cmd_undo)
 
     return parser
 
